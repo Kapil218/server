@@ -1,23 +1,20 @@
-import express from "express";
-import cors from "cors";
 import connectDB from "./db/index.js";
+import app from "./app.js";
 
-const app = express();
-
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
+connectDB()
+  .then(() => {
+    app.listen(process.env.PORT || 3000, () => {
+      console.log(`Example app listening on port ${process.env.PORT || 3000}`);
+    });
   })
-);
+  .catch((err) => console.log(err));
 
-app.get("/", (req, res) => {
-  res.send("Hello World!");
+app.on("error", (err) => {
+  console.error("❌ Server Error:", err);
 });
 
-connectDB();
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`Example app listening on port ${process.env.PORT || 3000}`);
+process.on("unhandledRejection", (err) => {
+  console.log(err);
+  console.log("Unhandled Rejection, shutting down ..............😢😢😢😢");
+  console.log(err.name, err.message);
 });
