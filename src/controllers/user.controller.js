@@ -4,12 +4,13 @@ import ApiResponse from "../utils/ApiResponse.js";
 import {
   generateAccessToken,
   generateRefreshToken,
+  verifyRefreshToken,
 } from "../utils/jwtTokens.js";
 import { pool } from "../db/index.js";
 import { hashValue, compareValue } from "../utils/bcrypt.js";
 
 // --------------------------------------------------------------------------------------------------------------------------------------
-
+// REGISTER
 // ----------------------------------------------------------------------------------------------------------------------------------------------
 
 const registerUser = asyncHandler(async (req, res) => {
@@ -17,7 +18,15 @@ const registerUser = asyncHandler(async (req, res) => {
   const { name, email, password, role } = req.body;
 
   //   validations
-  if ([name, email, password, role].some((field) => field?.trim() === "")) {
+  name = name.trim();
+  email = email.trim().toLowerCase();
+  role = role.trim().toLowerCase();
+  password = password.trim();
+  if (
+    [name, email, password, role].some(
+      (field) => typeof field === "string" && field === ""
+    )
+  ) {
     throw new ApiError(400, "All fields are required");
   }
 
@@ -34,8 +43,8 @@ const registerUser = asyncHandler(async (req, res) => {
 
   // create user
   const newUser = await pool.query(
-    "INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
-    [name, email, hashedPassword, role]
+    "INSERT INTO users (name, email, password, role, created_at) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
+    [name, email, hashedPassword, role, Date.now()]
   );
 
   // check for user creation if not created successfully then send err
@@ -50,14 +59,18 @@ const registerUser = asyncHandler(async (req, res) => {
 });
 
 // ----------------------------------------------------------------------------------------------------------------------------------------------
-
+// LOGIN
 // --------------------------------------------------------------------------------------------------------------------------------------------
 
-const loginUser = asyncHandler(async (req, res) => {
+const loginUser = asyncHandler(async (req, res, _) => {
   const { email, password } = req.body;
 
   // Validate input
-  if ([email, password].some((field) => field?.trim() === "")) {
+  email = email.trim().toLowerCase();
+  password = password.trim();
+  if (
+    [email, password].some((field) => typeof field === "string" && field === "")
+  ) {
     throw new ApiError(400, "All fields are required");
   }
 
@@ -128,10 +141,10 @@ const loginUser = asyncHandler(async (req, res) => {
 });
 
 //----------------------------------------------------------------------------------------------------------------------------------------------
-
+// LOGOUT
 //----------------------------------------------------------------------------------------------------------------------------------------------
 
-const logoutUser = asyncHandler(async (req, res) => {
+const logoutUser = asyncHandler(async (req, res, _) => {
   await pool.query("UPDATE users SET refresh_token = NULL WHERE id = $1", [
     req.user.id,
   ]);
@@ -148,9 +161,61 @@ const logoutUser = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, null, "Logout successful"));
 });
 
-const getUsers = asyncHandler(async (req, res) => {
-  const result = await pool.query("SELECT * FROM users");
-  res.status(200).json({ users: result.rows });
+const refreshUserToken = asyncHandler(async (req, res, _) => {
+  const incomingRefreshToken =
+    req.cookies?.refreshToken || req.body?.refreshToken;
+
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, "Refresh token not found");
+  }
+
+  const decodedData = await verifyRefreshToken(incomingRefreshToken);
+  const userId = decodedData.id;
+
+  const fetchedUser = await pool.query("SELECT * FROM users WHERE id = $1", [
+    userId,
+  ]);
+  const user = fetchedUser.rows[0];
+  const savedRefreshToken = user.refresh_token;
+
+  if (!savedRefreshToken) {
+    throw new ApiError(401, "Invalid refresh token");
+  }
+
+  if (incomingRefreshToken !== savedRefreshToken) {
+    throw new ApiError(401, "Invalid refresh token");
+  }
+
+  const newAccessToken = await generateAccessToken(
+    user.id,
+    user.name,
+    user.email,
+    user.role
+  );
+
+  const newRefreshToken = await generateRefreshToken(user.id);
+
+  await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
+    newRefreshToken,
+    user.id,
+  ]);
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  res
+    .cookie("accessToken", newAccessToken, options)
+    .cookie("refreshToken", newRefreshToken, options)
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { accessToken: newAccessToken, refreshToken: newRefreshToken },
+        "Access token refreshed"
+      )
+    );
 });
 
-export { registerUser, loginUser, logoutUser, getUsers };
+export { registerUser, loginUser, logoutUser, refreshUserToken };

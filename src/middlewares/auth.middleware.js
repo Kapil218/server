@@ -12,8 +12,7 @@ const authMiddleware = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    const decodedToken = verifyAccessToken(token);
-    // after decoding adding user data to request
+    const decodedToken = await verifyAccessToken(token);
     req.user = decodedToken;
     next();
   } catch (error) {

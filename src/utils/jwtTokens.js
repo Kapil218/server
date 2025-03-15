@@ -24,5 +24,19 @@ const verifyAccessToken = (token) => {
   }
 };
 
+// Verify Refresh Token
+const verifyRefreshToken = (token) => {
+  try {
+    return jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
+  } catch (error) {
+    throw new ApiError(403, "Invalid or Expired Token");
+  }
+};
+
 // Export functions
-export { generateAccessToken, generateRefreshToken, verifyAccessToken };
+export {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyAccessToken,
+  verifyRefreshToken,
+};
