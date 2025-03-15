@@ -11,7 +11,9 @@ const pool = new pg.Pool({
 const connectDB = async () => {
   try {
     const connectionInstance = await pool.connect();
-    console.log(`Connected to PostgreSQL database ${connectionInstance}`);
+    console.log(
+      `Connected to PostgreSQL database ${connectionInstance.database}`
+    );
   } catch (err) {
     console.error("Database connection error:", err);
     process.exit(1);
@@ -20,3 +22,4 @@ const connectDB = async () => {
 };
 
 export default connectDB;
+export { pool };
