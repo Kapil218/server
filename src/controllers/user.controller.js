@@ -14,19 +14,14 @@ import { hashValue, compareValue } from "../utils/bcrypt.js";
 // ----------------------------------------------------------------------------------------------------------------------------------------------
 
 const registerUser = asyncHandler(async (req, res) => {
-  // get data from user
-  const { name, email, password, role } = req.body;
+  // get data from user and validation
+  const name = req.body.name?.trim() || "";
+  const email = req.body.email?.trim().toLowerCase() || "";
+  const role = req.body.role?.trim().toLowerCase() || "";
+  const password = req.body.password?.trim() || "";
 
-  //   validations
-  name = name.trim();
-  email = email.trim().toLowerCase();
-  role = role.trim().toLowerCase();
-  password = password.trim();
-  if (
-    [name, email, password, role].some(
-      (field) => typeof field === "string" && field === ""
-    )
-  ) {
+  // Validate fields
+  if ([name, email, password, role].some((field) => field === "")) {
     throw new ApiError(400, "All fields are required");
   }
 
@@ -43,8 +38,8 @@ const registerUser = asyncHandler(async (req, res) => {
 
   // create user
   const newUser = await pool.query(
-    "INSERT INTO users (name, email, password, role, created_at) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role",
-    [name, email, hashedPassword, role, Date.now()]
+    "INSERT INTO users (name, email, password, role, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id, name, email, role",
+    [name, email, hashedPassword, role]
   );
 
   // check for user creation if not created successfully then send err
@@ -63,14 +58,11 @@ const registerUser = asyncHandler(async (req, res) => {
 // --------------------------------------------------------------------------------------------------------------------------------------------
 
 const loginUser = asyncHandler(async (req, res, _) => {
-  const { email, password } = req.body;
+  const email = req.body.email?.trim().toLowerCase() || "";
+  const password = req.body.password?.trim() || "";
 
   // Validate input
-  email = email.trim().toLowerCase();
-  password = password.trim();
-  if (
-    [email, password].some((field) => typeof field === "string" && field === "")
-  ) {
+  if ([email, password].some((field) => field === "")) {
     throw new ApiError(400, "All fields are required");
   }
 
