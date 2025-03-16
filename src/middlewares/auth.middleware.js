@@ -28,7 +28,6 @@ const refreshTokens = async (req, res) => {
     throw new ApiError(401, "Invalid refresh token");
   }
 
-  // Generate new tokens
   const newAccessToken = await generateAccessToken(
     user.id,
     user.name,
@@ -37,13 +36,11 @@ const refreshTokens = async (req, res) => {
   );
   const newRefreshToken = await generateRefreshToken(user.id);
 
-  // Update the refresh token in DB
   await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
     newRefreshToken,
     user.id,
   ]);
 
-  // Set new tokens in cookies
   const options = {
     httpOnly: true,
     secure: true,
@@ -52,7 +49,6 @@ const refreshTokens = async (req, res) => {
   res.cookie("accessToken", newAccessToken, options);
   res.cookie("refreshToken", newRefreshToken, options);
 
-  // Attach new token to request so user can access the page
   req.user = {
     id: user.id,
     name: user.name,
@@ -60,7 +56,7 @@ const refreshTokens = async (req, res) => {
     role: user.role,
   };
 
-  return newAccessToken; // Return new access token for internal use
+  return newAccessToken;
 };
 
 const authMiddleware = asyncHandler(async (req, res, next) => {
@@ -77,7 +73,6 @@ const authMiddleware = asyncHandler(async (req, res, next) => {
     req.user = decodedToken;
     next();
   } catch (error) {
-    // Try refreshing tokens and proceed
     try {
       console.log("refreshing tokens");
 
