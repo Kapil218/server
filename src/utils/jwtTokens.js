@@ -4,14 +4,14 @@ import ApiError from "./ApiError.js";
 // Generate Access Token
 const generateAccessToken = (id, email, role) => {
   return jwt.sign({ id, email, role }, process.env.ACCESS_TOKEN_SECRET, {
-    expiresIn: "15m",
+    expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
   });
 };
 
 // Generate Refresh Token
 const generateRefreshToken = (id) => {
   return jwt.sign({ id }, process.env.REFRESH_TOKEN_SECRET, {
-    expiresIn: "7d",
+    expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
   });
 };
 

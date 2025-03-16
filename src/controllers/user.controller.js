@@ -1,6 +1,7 @@
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
+import { refreshTokens } from "../middlewares/auth.middleware.js";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -153,6 +154,10 @@ const logoutUser = asyncHandler(async (req, res, _) => {
     .json(new ApiResponse(200, null, "Logout successful"));
 });
 
+//----------------------------------------------------------------------------------------------------------------------------------------------
+// REFRESH TOKEN
+//----------------------------------------------------------------------------------------------------------------------------------------------
+
 const refreshUserToken = asyncHandler(async (req, res, _) => {
   const incomingRefreshToken =
     req.cookies?.refreshToken || req.body?.refreshToken;
@@ -210,4 +215,13 @@ const refreshUserToken = asyncHandler(async (req, res, _) => {
     );
 });
 
-export { registerUser, loginUser, logoutUser, refreshUserToken };
+//----------------------------------------------------------------------------------------------------------------------------------------------
+// GET USERS
+//----------------------------------------------------------------------------------------------------------------------------------------------
+
+const getUsers = asyncHandler(async (req, res, _) => {
+  const users = await pool.query("SELECT * FROM users");
+  res.status(200).json(new ApiResponse(200, users.rows, "Users fetched"));
+});
+
+export { registerUser, loginUser, logoutUser, refreshUserToken, getUsers };
