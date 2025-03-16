@@ -1,7 +1,6 @@
 import asyncHandler from "../utils/asyncHandler.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
-import { refreshTokens } from "../middlewares/auth.middleware.js";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -15,18 +14,15 @@ import { hashValue, compareValue } from "../utils/bcrypt.js";
 // ----------------------------------------------------------------------------------------------------------------------------------------------
 
 const registerUser = asyncHandler(async (req, res) => {
-  // get data from user and validation
   const name = req.body.name?.trim() || "";
   const email = req.body.email?.trim().toLowerCase() || "";
   const role = req.body.role?.trim().toLowerCase() || "";
   const password = req.body.password?.trim() || "";
 
-  // Validate fields
   if ([name, email, password, role].some((field) => field === "")) {
     throw new ApiError(400, "All fields are required");
   }
 
-  // check if he already exists
   const userExists = await pool.query("SELECT * FROM users WHERE email = $1", [
     email,
   ]);
@@ -34,21 +30,17 @@ const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(400, "User Already exists");
   }
 
-  // hash password
   const hashedPassword = await hashValue(password);
 
-  // create user
   const newUser = await pool.query(
     "INSERT INTO users (name, email, password, role, created_at) VALUES ($1, $2, $3, $4, NOW()) RETURNING id, name, email, role",
     [name, email, hashedPassword, role]
   );
 
-  // check for user creation if not created successfully then send err
   if (newUser.rows.length === 0) {
     throw new ApiError(500, "Error while creating user");
   }
 
-  // if created successfully remove password and refresh token field and send res to user
   res
     .status(201)
     .json(new ApiResponse(201, newUser.rows[0], "User created successfully"));
@@ -62,12 +54,10 @@ const loginUser = asyncHandler(async (req, res, _) => {
   const email = req.body.email?.trim().toLowerCase() || "";
   const password = req.body.password?.trim() || "";
 
-  // Validate input
   if ([email, password].some((field) => field === "")) {
     throw new ApiError(400, "All fields are required");
   }
 
-  // Check if user exists
   const userQuery = await pool.query("SELECT * FROM users WHERE email = $1", [
     email,
   ]);
@@ -78,7 +68,6 @@ const loginUser = asyncHandler(async (req, res, _) => {
 
   const user = userQuery.rows[0];
 
-  // Compare passwords
   const isMatch = await compareValue(password, user.password);
   if (!isMatch) {
     throw new ApiError(401, "Invalid credentials");
@@ -88,7 +77,6 @@ const loginUser = asyncHandler(async (req, res, _) => {
     throw new ApiError(500, "JWT secrets are missing");
   }
 
-  // Generate access and refresh tokens
   const accessToken = await generateAccessToken(
     user.id,
     user.name,
@@ -98,19 +86,16 @@ const loginUser = asyncHandler(async (req, res, _) => {
 
   const refreshToken = await generateRefreshToken(user.id);
 
-  // Store refresh token in DB
   await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
     refreshToken,
     user.id,
   ]);
 
-  // Set token in cookie
   const options = {
     httpOnly: true,
     secure: true,
   };
 
-  // in response data we are sending access and refresh token because if we have mobile app then it does not have cookies store like browser
   res
     .status(200)
     .cookie("refreshToken", refreshToken, options)

@@ -17,7 +17,6 @@ const connectDB = async () => {
   } catch (err) {
     console.error("Database connection error:", err);
     process.exit(1);
-    // If the database connection fails (e.g., wrong credentials, database server down), the app should not continue running because it might depend on the database.
   }
 };
 
