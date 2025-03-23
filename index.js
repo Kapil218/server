@@ -1,4 +1,4 @@
-import connectDB from "./db/index.js";
+import connectDB from "./api/db/index.js";
 import app from "./app.js";
 
 connectDB()
@@ -17,4 +17,10 @@ process.on("unhandledRejection", (err) => {
   console.log(err);
   console.log("Unhandled Rejection, shutting down ..............😢😢😢😢");
   console.log(err.name, err.message);
+  process.exit(1);
+});
+
+app.use((err, req, res, next) => {
+  console.error(err.message);
+  res.status(500).json({ error: err.message });
 });

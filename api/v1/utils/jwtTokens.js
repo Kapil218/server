@@ -1,14 +1,14 @@
 import jwt from "jsonwebtoken";
 import ApiError from "./ApiError.js";
 
-const generateAccessToken = (id, email, role) => {
-  return jwt.sign({ id, email, role }, process.env.ACCESS_TOKEN_SECRET, {
+const generateAccessToken = (id, name, email, role) => {
+  return jwt.sign({ id, name, email, role }, process.env.ACCESS_TOKEN_SECRET, {
     expiresIn: process.env.ACCESS_TOKEN_EXPIRY,
   });
 };
 
-const generateRefreshToken = (id) => {
-  return jwt.sign({ id }, process.env.REFRESH_TOKEN_SECRET, {
+const generateRefreshToken = (id, role) => {
+  return jwt.sign({ id, role }, process.env.REFRESH_TOKEN_SECRET, {
     expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
   });
 };

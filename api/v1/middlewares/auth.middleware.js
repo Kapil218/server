@@ -1,5 +1,5 @@
 import { verifyAccessToken, verifyRefreshToken } from "../utils/jwtTokens.js";
-import { pool } from "../db/index.js";
+import { pool } from "../../db/index.js";
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -34,7 +34,7 @@ const refreshTokens = async (req, res) => {
     user.email,
     user.role
   );
-  const newRefreshToken = await generateRefreshToken(user.id);
+  const newRefreshToken = await generateRefreshToken(user.id, user.role);
 
   await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
     newRefreshToken,
@@ -86,4 +86,3 @@ const authMiddleware = asyncHandler(async (req, res, next) => {
 });
 
 export default authMiddleware;
-export { refreshTokens };

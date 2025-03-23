@@ -8,7 +8,7 @@
     "pg": "^8.14.0"
   },
   "scripts": {
-    "dev": "nodemon  --env-file=.env src/index.js"
+    "dev": "nodemon  --env-file=.env index.js"
   },
   "type": "module",
   "devDependencies": {
