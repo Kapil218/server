@@ -1,22 +1,22 @@
 import { Router } from "express";
 import {
   addDoctor,
-  getAllDoctors,
+  getDoctors,
   deleteDoctor,
   updateDoctor,
-  searchDoctors,
-  filterDoctors,
+  editDoctorSlots,
 } from "../controllers/doctor.controller.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 import { roleCheck } from "../middlewares/roleCheck.middleware.js";
 
-const route = new Router();
+const router = Router();
 
-route.get("/", authMiddleware, getAllDoctors);
-route.get("/search", authMiddleware, searchDoctors);
-route.get("/filter", authMiddleware, filterDoctors);
-route.post("/add-doctor", authMiddleware, roleCheck, addDoctor);
-route.delete("/remove/:id", authMiddleware, roleCheck, deleteDoctor);
-route.patch("/update/:id", authMiddleware, roleCheck, updateDoctor);
+router.get("/", authMiddleware, getDoctors);
+router.get("/search", authMiddleware, getDoctors);
+router.get("/filter", authMiddleware, getDoctors);
+router.post("/add-doctor", authMiddleware, roleCheck, addDoctor);
+router.delete("/remove/:id", authMiddleware, roleCheck, deleteDoctor);
+router.patch("/update/:id", authMiddleware, roleCheck, updateDoctor);
+router.patch("/updateSlots/:id", authMiddleware, roleCheck, editDoctorSlots);
 
-export default route;
+export default router;

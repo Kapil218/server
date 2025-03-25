@@ -1,5 +1,5 @@
 import asyncHandler from "../utils/asyncHandler.js";
-import ApiError from "../utils/ApiError.js";
+import ApiError from "../utils/apiError.js";
 
 const roleCheck = asyncHandler(async (req, res, next) => {
   if (req.user.role === "admin") next();

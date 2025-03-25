@@ -1,48 +1,86 @@
 import asyncHandler from "../utils/asyncHandler.js";
 import { pool } from "../../db/index.js";
-import ApiResponse from "../utils/ApiResponse.js";
-import ApiError from "../utils/ApiError.js";
+import ApiResponse from "../utils/apiResponse.js";
+import ApiError from "../utils/apiError.js";
 
 // Get all doctors
-const getAllDoctors = asyncHandler(async (req, res, _) => {
-  const doctors = await pool.query("SELECT * FROM doctors");
-  if (doctors.rowCount === 0) {
-    throw new ApiError(404, "No doctors found");
+const getDoctors = asyncHandler(async (req, res, _) => {
+  const { query, gender, experience, rating } = req.query;
+
+  let baseQuery = "SELECT * FROM doctors WHERE 1=1"; // Always true condition for dynamic query
+  const values = [];
+  let count = 1;
+
+  // Search by name or specialty (but not both)
+  if (query) {
+    baseQuery += " AND (name ILIKE $1 OR specialty ILIKE $1)";
+    values.push(`%${query}%`);
+    count++;
   }
-  res.status(200).json(new ApiResponse(200, doctors.rows, "Doctors fetched"));
+
+  // Apply filters if provided
+  if (gender) {
+    baseQuery += ` AND gender = $${count++}`;
+    values.push(gender);
+  }
+  if (!isNaN(parseInt(experience, 10))) {
+    baseQuery += ` AND experience >= $${count++}`;
+    values.push(parseInt(experience, 10));
+  }
+  if (!isNaN(parseFloat(rating))) {
+    baseQuery += ` AND rating >= $${count++}`;
+    values.push(parseFloat(rating));
+  }
+
+  const result = await pool.query(baseQuery, values);
+
+  if (result.rowCount === 0) {
+    throw new ApiError(404, "No matching doctors found");
+  }
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, result.rows, "Doctors fetched successfully"));
 });
 
 // Add a doctor
 const addDoctor = asyncHandler(async (req, res, _) => {
   const name = (req.body.name || "").trim();
   const specialty = (req.body.specialty || "").trim();
-  const experience = (req.body.experience || "").trim();
+  const experience = parseInt(req.body.experience, 10);
   const degree = (req.body.degree || "").trim();
   const location = (req.body.location || "").trim();
-  const available_times = req.body.available_times || "";
   const gender = (req.body.gender || "").trim();
+  const available_times = req.body.available_times || {};
 
   if (
-    [
-      name,
-      specialty,
-      experience,
-      degree,
-      location,
-      available_times,
-      gender,
-    ].some((field) => field === "")
+    !(
+      name &&
+      specialty &&
+      degree &&
+      location &&
+      gender &&
+      Object.keys(available_times).length > 0
+    )
   ) {
     throw new ApiError(400, "All fields are required");
+  }
+  if (!Number.isInteger(experience) || experience < 0) {
+    throw new ApiError(400, "Experience must be a positive integer");
   }
 
   if (!req.user?.id) {
     throw new ApiError(403, "Unauthorized: Admin access required");
   }
 
+  const availableTimesJson =
+    typeof available_times === "string"
+      ? available_times
+      : JSON.stringify(available_times);
+
   const newDoctor = await pool.query(
     `INSERT INTO doctors (name, specialty, experience, rating, degree, location, available_times,gender, created_by_admin) 
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9) RETURNING *`,
     [
       name,
       specialty,
@@ -50,7 +88,7 @@ const addDoctor = asyncHandler(async (req, res, _) => {
       0.0,
       degree,
       location,
-      JSON.stringify(available_times),
+      availableTimesJson,
       gender,
       req.user.id,
     ]
@@ -85,24 +123,29 @@ const updateDoctor = asyncHandler(async (req, res, _) => {
   if (!req.user?.id) {
     throw new ApiError(403, "Unauthorized: Admin access required");
   }
+  let updatedAvailability = existingDoctor.rows[0].available_times;
+  if (available_times) {
+    updatedAvailability = { ...updatedAvailability, ...available_times };
+  }
+
   const updatedDoctor = await pool.query(
     `UPDATE doctors 
-  SET name = COALESCE(NULLIF($1, ''), name),
-      specialty = COALESCE(NULLIF($2, ''), specialty),
-      experience = COALESCE(NULLIF($3, ''), experience),
-      degree = COALESCE(NULLIF($4, ''), degree),
-      location = COALESCE(NULLIF($5, ''), location),
-      available_times = COALESCE(NULLIF($6, ''), available_times),
-      gender = COALESCE(NULLIF($7, ''), gender),
-      updated_by = $8
-  WHERE id = $9 RETURNING *`,
+    SET name = COALESCE(NULLIF($1, ''), name),
+        specialty = COALESCE(NULLIF($2, ''), specialty),
+        experience = COALESCE(NULLIF($3, ''), experience),
+        degree = COALESCE(NULLIF($4, ''), degree),
+        location = COALESCE(NULLIF($5, ''), location),
+        available_times = COALESCE(NULLIF($6::jsonb, ''::jsonb), available_times),
+        gender = COALESCE(NULLIF($7, ''), gender),
+        updated_by = $8
+    WHERE id = $9 RETURNING *`,
     [
       name,
       specialty,
       experience,
       degree,
       location,
-      available_times,
+      JSON.stringify(updatedAvailability),
       gender,
       req.user.id,
       id,
@@ -147,73 +190,40 @@ const deleteDoctor = asyncHandler(async (req, res, _) => {
     .json(new ApiResponse(200, null, "Doctor deleted successfully"));
 });
 
-// search doctor by name or spaciality
-const searchDoctors = asyncHandler(async (req, res, _) => {
-  const query = (req.query.query || "").trim();
+// edit doctor slotes
+const editDoctorSlots = asyncHandler(async (req, res, _) => {
+  const { id } = req.params;
+  const { date, slots } = req.body; // slots should be an array of time strings
 
-  if (!query) {
-    return res
-      .status(400)
-      .json(new ApiResponse(400, null, "Search query is required"));
+  if (!date || !Array.isArray(slots)) {
+    throw new ApiError(400, "Date and slots (array) are required");
   }
 
-  const result = await pool.query(
-    `SELECT * FROM doctors WHERE name ILIKE $1 OR specialty ILIKE $1`,
-    [`%${query}%`]
+  const doctor = await pool.query(
+    "SELECT available_times FROM doctors WHERE id = $1",
+    [id]
   );
 
-  if (result.rowCount === 0) {
-    throw new ApiError(404, "No doctors found matching your search");
+  if (doctor.rowCount === 0) {
+    throw new ApiError(404, "Doctor not found");
   }
+
+  let availableTimes = JSON.parse(doctor.rows[0].available_times || "{}");
+
+  if (slots.length === 0) {
+    delete availableTimes[date]; // Remove the date if no slots remain
+  } else {
+    availableTimes[date] = slots; // Update slots for the given date
+  }
+
+  await pool.query("UPDATE doctors SET available_times = $1 WHERE id = $2", [
+    JSON.stringify(availableTimes),
+    id,
+  ]);
 
   res
     .status(200)
-    .json(new ApiResponse(200, result.rows, "Doctors fetched successfully"));
+    .json(new ApiResponse(200, availableTimes, "Slots updated successfully"));
 });
 
-// filter doctor by rating gender experience
-const filterDoctors = asyncHandler(async (req, res, _) => {
-  const gender = (req.query.gender || "").trim();
-  const experience = parseInt(req.query.experience, 10);
-  const rating = parseFloat(req.query.rating);
-
-  let base_query = "SELECT * FROM DOCTORS WHERE 1=1";
-  const values = [];
-  let count = 1;
-
-  if (!(gender || experience || rating)) {
-    return ApiError("atleast one filter is required");
-  }
-  if (gender) {
-    values.push(gender);
-    base_query += ` AND gender = $${count++}`;
-  }
-  if (!isNaN(experience)) {
-    values.push(experience);
-    base_query += ` AND experience >= $${count++}`;
-  }
-
-  if (!isNaN(rating)) {
-    values.push(rating);
-    base_query += ` AND rating >= $${count++}`;
-  }
-
-  const result = await pool.query(base_query, values);
-
-  if (result.rowCount === 0) {
-    throw new ApiError(404, "No doctors match found");
-  }
-
-  res
-    .status(200)
-    .json(new ApiResponse(200, result.rows, "Doctors fetched successfully"));
-});
-
-export {
-  addDoctor,
-  getAllDoctors,
-  updateDoctor,
-  deleteDoctor,
-  searchDoctors,
-  filterDoctors,
-};
+export { addDoctor, getDoctors, updateDoctor, deleteDoctor, editDoctorSlots };
