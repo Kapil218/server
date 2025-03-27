@@ -1,7 +1,7 @@
 import {
   addReview,
   reviewHistoryOfUser,
-  j,
+  pendingReviewsOfUsers,
 } from "../controllers/review.controller.js";
 
 import { Router } from "express";

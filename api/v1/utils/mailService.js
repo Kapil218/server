@@ -30,7 +30,7 @@ const sendAppointmentEmail = async (data) => {
   try {
     const info = await transporter.sendMail({
       from: '"Clinic Support" <aliceksr218@gmail.com>',
-      to: "kapilsinghrathore218@gmail.com",
+      to: data.userEmail,
       subject: "Your Appointment Status",
       html: emailContent,
     });

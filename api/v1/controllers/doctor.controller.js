@@ -5,42 +5,120 @@ import ApiError from "../utils/apiError.js";
 
 // Get all doctors
 const getDoctors = asyncHandler(async (req, res, _) => {
-  const { query, gender, experience, rating } = req.query;
+  const {
+    query,
+    gender,
+    experience,
+    rating,
+    page = 1,
+    perPage = 6,
+  } = req.query;
 
-  let baseQuery = "SELECT * FROM doctors WHERE 1=1"; // Always true condition for dynamic query
+  let baseQuery = " WHERE 1=1"; // Start with just the WHERE clause
   const values = [];
   let count = 1;
 
-  // Search by name or specialty (but not both)
+  // Search filter (name or specialty)
   if (query) {
-    baseQuery += " AND (name ILIKE $1 OR specialty ILIKE $1)";
-    values.push(`%${query}%`);
+    baseQuery += ` AND (name ILIKE $${count} OR specialty ILIKE $${count + 1})`;
+    values.push(`%${query}%`, `%${query}%`);
+    count += 2;
+  }
+
+  // Gender filter (case insensitive)
+  if (gender) {
+    baseQuery += ` AND gender ILIKE $${count}`;
+    values.push(gender);
     count++;
   }
 
-  // Apply filters if provided
-  if (gender) {
-    baseQuery += ` AND gender = $${count++}`;
-    values.push(gender);
+  // Experience filter (handle ranges)
+  if (experience) {
+    if (experience.includes("-")) {
+      const [minExp, maxExp] = experience.split("-").map(Number);
+      baseQuery += ` AND experience BETWEEN $${count} AND $${count + 1}`;
+      values.push(minExp, maxExp);
+      count += 2;
+    } else {
+      baseQuery += ` AND experience >= $${count}`;
+      values.push(parseInt(experience, 10));
+      count++;
+    }
   }
-  if (!isNaN(parseInt(experience, 10))) {
-    baseQuery += ` AND experience >= $${count++}`;
-    values.push(parseInt(experience, 10));
-  }
+
+  // Rating filter
   if (!isNaN(parseFloat(rating))) {
-    baseQuery += ` AND rating >= $${count++}`;
+    baseQuery += ` AND rating >= $${count}`;
     values.push(parseFloat(rating));
+    count++;
   }
 
-  const result = await pool.query(baseQuery, values);
+  // Get total count
+  const countQuery = `SELECT COUNT(*) FROM doctors ${baseQuery}`;
+  const totalResult = await pool.query(countQuery, values);
+  const totalDoctors = parseInt(totalResult.rows[0].count, 10);
+  const totalPages = Math.ceil(totalDoctors / perPage);
 
-  if (result.rowCount === 0) {
-    throw new ApiError(404, "No matching doctors found");
+  // Pagination
+  const pageSize = Number(perPage) || 6;
+  const currentPage = Number(page) || 1;
+  const offset = (currentPage - 1) * pageSize;
+
+  values.push(pageSize); // LIMIT
+  values.push(offset); // OFFSET
+
+  // Final doctor query
+  const finalQuery = `SELECT * FROM doctors ${baseQuery} ORDER BY rating DESC LIMIT $${count} OFFSET $${count + 1}`;
+  const result = await pool.query(finalQuery, values);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        doctors: result.rows,
+        pagination: {
+          totalDoctors,
+          totalPages,
+          currentPage,
+          pageSize,
+        },
+      },
+      "Doctors fetched successfully"
+    )
+  );
+});
+
+// get doctor by id
+const getDoctorById = asyncHandler(async (req, res, _) => {
+  const { id } = req.params; // Get doctor ID from request params
+
+  if (!id) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Doctor ID is required" });
   }
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, result.rows, "Doctors fetched successfully"));
+  // Query to fetch a single doctor
+  const query = `SELECT * FROM doctors WHERE id = $1 LIMIT 1`;
+
+  try {
+    const result = await pool.query(query, [id]);
+
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Doctor not found" });
+    }
+
+    res
+      .status(200)
+      .json(
+        new ApiResponse(200, result.rows[0], "Doctor fetched successfully")
+      );
+  } catch (error) {
+    console.error("Error fetching doctor:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
 });
 
 // Add a doctor
@@ -85,7 +163,7 @@ const addDoctor = asyncHandler(async (req, res, _) => {
       name,
       specialty,
       experience,
-      0.0,
+      0,
       degree,
       location,
       availableTimesJson,
@@ -117,7 +195,7 @@ const updateDoctor = asyncHandler(async (req, res, _) => {
   );
 
   if (existingDoctor.rowCount === 0) {
-    return res.status(404).json(new ApiResponse(404, null, "Doctor not found"));
+    throw new ApiError(404, "Doctor not fount in database");
   }
 
   if (!req.user?.id) {
@@ -152,7 +230,7 @@ const updateDoctor = asyncHandler(async (req, res, _) => {
     ]
   );
 
-  res
+  return res
     .status(200)
     .json(
       new ApiResponse(200, updatedDoctor.rows[0], "Doctor updated successfully")
@@ -173,7 +251,9 @@ const deleteDoctor = asyncHandler(async (req, res, _) => {
   );
 
   if (existingDoctor.rowCount === 0) {
-    return res.status(404).json(new ApiResponse(404, null, "Doctor not found"));
+    return res
+      .status(404)
+      .json(new ApiResponse(404, null, "Doctor not founded in database"));
   }
 
   const deletedDoctor = await pool.query(
@@ -226,4 +306,11 @@ const editDoctorSlots = asyncHandler(async (req, res, _) => {
     .json(new ApiResponse(200, availableTimes, "Slots updated successfully"));
 });
 
-export { addDoctor, getDoctors, updateDoctor, deleteDoctor, editDoctorSlots };
+export {
+  addDoctor,
+  getDoctors,
+  updateDoctor,
+  deleteDoctor,
+  editDoctorSlots,
+  getDoctorById,
+};
