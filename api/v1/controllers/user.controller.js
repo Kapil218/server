@@ -4,6 +4,7 @@ import ApiResponse from "../utils/apiResponse.js";
 import {
   generateAccessToken,
   generateRefreshToken,
+  verifyRefreshToken,
 } from "../utils/jwtTokens.js";
 import { pool } from "../../db/index.js";
 import { hashValue, compareValue } from "../utils/bcrypt.js";
@@ -141,4 +142,65 @@ const logoutUser = asyncHandler(async (req, res, _) => {
     .json(new ApiResponse(200, null, "Logout successful"));
 });
 
-export { registerUser, loginUser, logoutUser };
+//----------------------------------------------------------------------------------------------------------------------------------------------
+// REFRESH TOKEN
+//----------------------------------------------------------------------------------------------------------------------------------------------
+
+const refreshUserToken = asyncHandler(async (req, res, _) => {
+  const incomingRefreshToken =
+    req.cookies?.refreshToken || req.body?.refreshToken;
+
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, "Refresh token not found");
+  }
+
+  const decodedData = await verifyRefreshToken(incomingRefreshToken);
+  const userId = decodedData.id;
+
+  const fetchedUser = await pool.query("SELECT * FROM users WHERE id = $1", [
+    userId,
+  ]);
+  const user = fetchedUser.rows[0];
+  const savedRefreshToken = user.refresh_token;
+
+  if (!savedRefreshToken) {
+    throw new ApiError(401, "Invalid refresh token");
+  }
+
+  if (incomingRefreshToken !== savedRefreshToken) {
+    throw new ApiError(401, "Invalid refresh token");
+  }
+
+  const newAccessToken = await generateAccessToken(
+    user.id,
+    user.name,
+    user.email,
+    user.role
+  );
+
+  const newRefreshToken = await generateRefreshToken(user.id);
+
+  await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
+    newRefreshToken,
+    user.id,
+  ]);
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  res
+    .cookie("accessToken", newAccessToken, options)
+    .cookie("refreshToken", newRefreshToken, options)
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        { accessToken: newAccessToken, refreshToken: newRefreshToken },
+        "Access token refreshed"
+      )
+    );
+});
+
+export { registerUser, loginUser, logoutUser, refreshUserToken };
