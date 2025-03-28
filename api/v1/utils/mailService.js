@@ -17,15 +17,40 @@ const sendAppointmentEmail = async (data) => {
   }
 
   const emailContent = `
-    <h2>Appointment Confirmation</h2>
-    <p>Your appointment status has been changed To ${data.status}.</p>
-    <p><strong>Appointment ID:</strong> ${data.appointment_id}</p>
-    <p><strong>Doctor :</strong> ${data.doctor_name}</p>
-    <p><strong>Date & Time:</strong> ${data.appointment_time}</p>
-    <p><strong>Location:</strong> ${data.location}</p>
-    <p><strong>Consultation Type:</strong> ${data.consultation_type}</p>
-    <p>Thank you for using our service.</p>
-  `;
+  <h2>Appointment Confirmation</h2>
+  <p>Your appointment status has been changed to <strong>${data.status}</strong>.</p>
+  <table border="1" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+    <tr>
+      <th style="background-color: #f2f2f2;">Field</th>
+      <th style="background-color: #f2f2f2;">Details</th>
+    </tr>
+    <tr>
+      <td><strong>Appointment ID</strong></td>
+      <td>${data.appointment_id}</td>
+    </tr>
+    <tr>
+      <td><strong>Doctor</strong></td>
+      <td>${data.doctor_name}</td>
+    </tr>
+    <tr>
+      <td><strong>Patient</strong></td>
+      <td>${data.patient_name}</td>
+    </tr>
+    <tr>
+      <td><strong>Date & Time</strong></td>
+      <td>${data.appointment_time}</td>
+    </tr>
+    <tr>
+      <td><strong>Location</strong></td>
+      <td>${data.location}</td>
+    </tr>
+    <tr>
+      <td><strong>Consultation Type</strong></td>
+      <td>${data.consultation_type}</td>
+    </tr>
+  </table>
+  <p>Thank you for using our service.</p>
+`;
 
   try {
     const info = await transporter.sendMail({

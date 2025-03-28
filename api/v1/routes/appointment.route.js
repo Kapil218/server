@@ -9,7 +9,7 @@ import { roleCheck } from "../middlewares/roleCheck.middleware.js";
 const router = Router();
 
 router.get("/", authMiddleware, roleCheck, getAllAppointments);
-router.post("/book-appointment", authMiddleware, roleCheck, bookAppointment);
+router.post("/book-appointment", authMiddleware, bookAppointment);
 router.patch(
   "/updateStatus",
   authMiddleware,

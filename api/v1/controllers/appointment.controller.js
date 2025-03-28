@@ -51,7 +51,7 @@ const bookAppointment = asyncHandler(async (req, res) => {
   }
 
   const doctorExists = await pool.query(
-    "SELECT id, available_times FROM doctors WHERE id = $1",
+    "SELECT id, name, available_times FROM doctors WHERE id = $1",
     [doctor_id]
   );
 
@@ -64,21 +64,16 @@ const bookAppointment = asyncHandler(async (req, res) => {
       ? JSON.parse(doctorExists.rows[0].available_times)
       : doctorExists.rows[0].available_times || {};
 
-  // Ensure the selected date exists
   if (!availableTimes[date]) {
     throw new ApiError(400, "Doctor is not available on the selected date");
   }
 
-  // Extract all available slots from all shifts (morning, afternoon, evening, etc.)
   const allAvailableSlots = Object.values(availableTimes[date]).flat();
-
-  // Check if the selected slot_time exists in the available slots
 
   if (!allAvailableSlots.includes(slot_time)) {
     throw new ApiError(400, "Doctor is not available at the selected time");
   }
 
-  // Check if the doctor already has an appointment at the same time
   const existingAppointment = await pool.query(
     "SELECT id FROM appointments WHERE doctor_id = $1 AND appointment_time = $2",
     [doctor_id, `${date}T${slot_time}`]
@@ -88,7 +83,6 @@ const bookAppointment = asyncHandler(async (req, res) => {
     throw new ApiError(400, "This time slot is already booked");
   }
 
-  // Insert the new appointment into the database
   const newAppointment = await pool.query(
     `INSERT INTO appointments 
       (patient_id, doctor_id, appointment_time, location, consultation_type, status) 
@@ -97,44 +91,67 @@ const bookAppointment = asyncHandler(async (req, res) => {
     [
       patient_id,
       doctor_id,
-      `${date}T${slot_time}`, //"YYYY-MM-DDTHH:MM"
+      `${date}T${slot_time}`,
       location,
       consultation_type,
       "pending",
     ]
   );
 
-  console.log(availableTimes);
-
-  // Remove the booked slot from the correct shift
   availableTimes[date][shift] = availableTimes[date][shift].filter(
     (slot) => slot !== slot_time
   );
 
-  // If no slots left in the shift, remove the shift
   if (availableTimes[date][shift].length === 0) {
     delete availableTimes[date][shift];
   }
 
-  // If no shifts left for the day, remove the date
   if (Object.keys(availableTimes[date]).length === 0) {
     delete availableTimes[date];
   }
 
-  // Update the doctor's available_times in the database
   await pool.query("UPDATE doctors SET available_times = $1 WHERE id = $2", [
     JSON.stringify(availableTimes),
     doctor_id,
   ]);
 
-  // Send success response with the booked appointment details
+  // Fetch patient details correctly
+  const patientData = await pool.query(
+    "SELECT name, email FROM users WHERE id=$1",
+    [patient_id]
+  );
+
+  if (patientData.rowCount === 0) {
+    throw new ApiError(404, "Patient not found");
+  }
+
+  const patientEmail = patientData.rows[0].email;
+  const patientName = patientData.rows[0].name;
+
+  console.log(patientData.rows[0]);
+
+  // Email Data
+  const emailData = {
+    appointment_id: newAppointment.rows[0].id,
+    doctor_name: doctorExists.rows[0].name,
+    patient_name: patientName,
+    userEmail: patientEmail,
+    appointment_time: `${date} at ${slot_time}`,
+    location,
+    consultation_type,
+    status: "pending",
+  };
+
+  // Send Email
+  await sendAppointmentEmail(emailData);
+
   res
     .status(201)
     .json(
       new ApiResponse(
         201,
         newAppointment.rows[0],
-        "Appointment booked successfully"
+        "Appointment booked successfully. Confirmation email sent."
       )
     );
 });
@@ -150,8 +167,9 @@ const updateAppointmentStatus = asyncHandler(async (req, res) => {
     [id]
   );
   if (appointment.rowCount === 0) {
-    throw new ApiError(200, "appointment not found ");
+    throw new ApiError(404, "Appointment not found");
   }
+
   const updatedAppointment = await pool.query(
     "UPDATE appointments SET status = $1 WHERE id = $2 RETURNING *",
     [status, id]
@@ -169,22 +187,28 @@ const updateAppointmentStatus = asyncHandler(async (req, res) => {
     ]);
 
     if (doctor.rowCount === 0) {
-      throw new ApiError(200, "doctor not found");
+      throw new ApiError(404, "Doctor not found");
     }
+
     const doctor_name = doctor.rows[0].name;
 
-    const patient = await pool.query("SELECT name FROM doctors WHERE id=$1", [
-      updatedData.patient_id,
-    ]);
+    // Correcting the patient query to fetch details from the `users` table
+    const patient = await pool.query(
+      "SELECT name, email FROM users WHERE id=$1",
+      [updatedData.patient_id]
+    );
 
     if (patient.rowCount === 0) {
-      throw new ApiError(200, "doctor not found");
+      throw new ApiError(404, "Patient not found");
     }
+
     const userEmail = patient.rows[0].email;
+    const patient_name = patient.rows[0].name;
 
     const dataToSend = {
       appointment_id: updatedData.id,
       doctor_name,
+      patient_name,
       userEmail,
       appointment_time: updatedData.appointment_time,
       location: updatedData.location,
@@ -194,9 +218,11 @@ const updateAppointmentStatus = asyncHandler(async (req, res) => {
 
     await sendAppointmentEmail(dataToSend);
   }
+
   res.status(200).json({
     success: true,
     message: `Appointment status updated to '${status}'`,
   });
 });
+
 export { bookAppointment, updateAppointmentStatus, getAllAppointments };
