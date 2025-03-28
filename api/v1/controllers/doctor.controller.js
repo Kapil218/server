@@ -3,7 +3,6 @@ import { pool } from "../../db/index.js";
 import ApiResponse from "../utils/apiResponse.js";
 import ApiError from "../utils/apiError.js";
 
-// Get all doctors
 const getDoctors = asyncHandler(async (req, res, _) => {
   const {
     query,
@@ -12,22 +11,44 @@ const getDoctors = asyncHandler(async (req, res, _) => {
     rating,
     page = 1,
     perPage = 6,
+    topRated, // Get topRated param
   } = req.query;
 
-  let baseQuery = " WHERE 1=1"; // Start with just the WHERE clause
+  let whereClause = " WHERE 1=1"; // Start with base WHERE clause
   const values = [];
   let count = 1;
 
+  // Check if any filters or search query are applied
+  const hasFilters = query || gender || experience || rating;
+
+  // If topRated=true and no filters/search are applied, fetch top-rated doctors
+  if (topRated === "true" && !hasFilters) {
+    const topRatedQuery = `
+      SELECT * FROM doctors 
+      ORDER BY rating DESC 
+      LIMIT 6
+    `;
+    const result = await pool.query(topRatedQuery);
+
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        { doctors: result.rows }, // No pagination for top-rated case
+        "Top-rated doctors fetched successfully"
+      )
+    );
+  }
+
   // Search filter (name or specialty)
   if (query) {
-    baseQuery += ` AND (name ILIKE $${count} OR specialty ILIKE $${count + 1})`;
+    whereClause += ` AND (name ILIKE $${count} OR specialty ILIKE $${count + 1})`;
     values.push(`%${query}%`, `%${query}%`);
     count += 2;
   }
 
   // Gender filter (case insensitive)
   if (gender) {
-    baseQuery += ` AND gender ILIKE $${count}`;
+    whereClause += ` AND gender ILIKE $${count}`;
     values.push(gender);
     count++;
   }
@@ -36,11 +57,11 @@ const getDoctors = asyncHandler(async (req, res, _) => {
   if (experience) {
     if (experience.includes("-")) {
       const [minExp, maxExp] = experience.split("-").map(Number);
-      baseQuery += ` AND experience BETWEEN $${count} AND $${count + 1}`;
+      whereClause += ` AND experience BETWEEN $${count} AND $${count + 1}`;
       values.push(minExp, maxExp);
       count += 2;
     } else {
-      baseQuery += ` AND experience >= $${count}`;
+      whereClause += ` AND experience >= $${count}`;
       values.push(parseInt(experience, 10));
       count++;
     }
@@ -48,13 +69,13 @@ const getDoctors = asyncHandler(async (req, res, _) => {
 
   // Rating filter
   if (!isNaN(parseFloat(rating))) {
-    baseQuery += ` AND rating >= $${count}`;
+    whereClause += ` AND rating >= $${count}`;
     values.push(parseFloat(rating));
     count++;
   }
 
-  // Get total count
-  const countQuery = `SELECT COUNT(*) FROM doctors ${baseQuery}`;
+  // Get total count for pagination
+  const countQuery = `SELECT COUNT(*) FROM doctors ${whereClause}`;
   const totalResult = await pool.query(countQuery, values);
   const totalDoctors = parseInt(totalResult.rows[0].count, 10);
   const totalPages = Math.ceil(totalDoctors / perPage);
@@ -67,8 +88,13 @@ const getDoctors = asyncHandler(async (req, res, _) => {
   values.push(pageSize); // LIMIT
   values.push(offset); // OFFSET
 
-  // Final doctor query
-  const finalQuery = `SELECT * FROM doctors ${baseQuery} ORDER BY rating DESC LIMIT $${count} OFFSET $${count + 1}`;
+  // Final query
+  const finalQuery = `
+    SELECT * FROM doctors 
+    ${whereClause} 
+    ORDER BY rating DESC 
+    LIMIT $${count} OFFSET $${count + 1}
+  `;
   const result = await pool.query(finalQuery, values);
 
   res.status(200).json(
@@ -76,12 +102,9 @@ const getDoctors = asyncHandler(async (req, res, _) => {
       200,
       {
         doctors: result.rows,
-        pagination: {
-          totalDoctors,
-          totalPages,
-          currentPage,
-          pageSize,
-        },
+        pagination: hasFilters
+          ? { totalDoctors, totalPages, currentPage, pageSize }
+          : undefined, // No pagination for top-rated case
       },
       "Doctors fetched successfully"
     )
@@ -121,7 +144,6 @@ const getDoctorById = asyncHandler(async (req, res, _) => {
   }
 });
 
-// Add a doctor
 const addDoctor = asyncHandler(async (req, res, _) => {
   const name = (req.body.name || "").trim();
   const specialty = (req.body.specialty || "").trim();
@@ -130,6 +152,7 @@ const addDoctor = asyncHandler(async (req, res, _) => {
   const location = (req.body.location || "").trim();
   const gender = (req.body.gender || "").trim();
   const available_times = req.body.available_times || {};
+  const created_by_admin = req.user?.id; // Ensure this is present
 
   if (
     !(
@@ -138,17 +161,15 @@ const addDoctor = asyncHandler(async (req, res, _) => {
       degree &&
       location &&
       gender &&
-      Object.keys(available_times).length > 0
+      Object.keys(available_times).length > 0 &&
+      created_by_admin
     )
   ) {
     throw new ApiError(400, "All fields are required");
   }
+
   if (!Number.isInteger(experience) || experience < 0) {
     throw new ApiError(400, "Experience must be a positive integer");
-  }
-
-  if (!req.user?.id) {
-    throw new ApiError(403, "Unauthorized: Admin access required");
   }
 
   const availableTimesJson =
@@ -157,18 +178,17 @@ const addDoctor = asyncHandler(async (req, res, _) => {
       : JSON.stringify(available_times);
 
   const newDoctor = await pool.query(
-    `INSERT INTO doctors (name, specialty, experience, rating, degree, location, available_times,gender, created_by_admin) 
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9) RETURNING *`,
+    `INSERT INTO doctors (name, specialty, experience, degree, location, available_times, gender, created_by_admin) 
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8) RETURNING *`,
     [
       name,
       specialty,
       experience,
-      0,
       degree,
       location,
       availableTimesJson,
       gender,
-      req.user.id,
+      created_by_admin,
     ]
   );
 
@@ -183,11 +203,16 @@ const updateDoctor = asyncHandler(async (req, res, _) => {
 
   const name = (req.body.name || "").trim();
   const specialty = (req.body.specialty || "").trim();
-  const experience = (req.body.experience || "").trim();
+  const experience =
+    typeof req.body.experience === "number" ? req.body.experience : null;
   const degree = (req.body.degree || "").trim();
   const location = (req.body.location || "").trim();
-  const available_times = req.body.available_times || "";
+  const available_times = req.body.available_times || {};
   const gender = (req.body.gender || "").trim();
+  const rating =
+    typeof req.body.rating === "number"
+      ? parseFloat(req.body.rating.toFixed(1))
+      : null;
 
   const existingDoctor = await pool.query(
     "SELECT * FROM doctors WHERE id = $1",
@@ -195,28 +220,30 @@ const updateDoctor = asyncHandler(async (req, res, _) => {
   );
 
   if (existingDoctor.rowCount === 0) {
-    throw new ApiError(404, "Doctor not fount in database");
+    throw new ApiError(404, "Doctor not found in database");
   }
 
   if (!req.user?.id) {
     throw new ApiError(403, "Unauthorized: Admin access required");
   }
-  let updatedAvailability = existingDoctor.rows[0].available_times;
-  if (available_times) {
-    updatedAvailability = { ...updatedAvailability, ...available_times };
-  }
+
+  let updatedAvailability = {
+    ...existingDoctor.rows[0].available_times,
+    ...available_times,
+  };
 
   const updatedDoctor = await pool.query(
     `UPDATE doctors 
-    SET name = COALESCE(NULLIF($1, ''), name),
-        specialty = COALESCE(NULLIF($2, ''), specialty),
-        experience = COALESCE(NULLIF($3, ''), experience),
-        degree = COALESCE(NULLIF($4, ''), degree),
-        location = COALESCE(NULLIF($5, ''), location),
-        available_times = COALESCE(NULLIF($6::jsonb, ''::jsonb), available_times),
-        gender = COALESCE(NULLIF($7, ''), gender),
-        updated_by = $8
-    WHERE id = $9 RETURNING *`,
+      SET name = COALESCE(NULLIF($1, ''), name),
+          specialty = COALESCE(NULLIF($2, ''), specialty),
+          experience = COALESCE($3, experience),
+          degree = COALESCE(NULLIF($4, ''), degree),
+          location = COALESCE(NULLIF($5, ''), location),
+          available_times = COALESCE(NULLIF($6::jsonb, '{}'::jsonb), available_times),
+          gender = COALESCE(NULLIF($7, ''), gender),
+          rating = COALESCE($8, rating),
+          updated_by_admin = $9
+      WHERE id = $10 RETURNING *`,
     [
       name,
       specialty,
@@ -225,6 +252,7 @@ const updateDoctor = asyncHandler(async (req, res, _) => {
       location,
       JSON.stringify(updatedAvailability),
       gender,
+      rating,
       req.user.id,
       id,
     ]
