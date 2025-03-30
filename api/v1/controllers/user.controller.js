@@ -49,7 +49,29 @@ const registerUser = asyncHandler(async (req, res) => {
 // ----------------------------------------------------------------------------------------------------------------------------------------------
 // LOGIN
 // --------------------------------------------------------------------------------------------------------------------------------------------
-
+const loginWithGoogle = asyncHandler(async (req, res) => {
+  passport.authenticate("google", {
+    scope: ["email", "profile"],
+  })(req, res, (err) => {
+    if (err) {
+      throw new ApiError(500, "Google authentication failed");
+    }
+    res.status(200).json(new ApiResponse(200, null, "Google login initiated"));
+  });
+});
+const loginWithGoogleCallback = asyncHandler(async (req, res) => {
+  passport.authenticate("google", {
+    session: false,
+  }),
+    async (req, res) => {
+      try {
+        console.log("success", req.user);
+        res.redirect(`http://localhost:5000/api/v1/employees`);
+      } catch (err) {
+        console.log("catch of google auth", err);
+      }
+    };
+});
 const loginUser = asyncHandler(async (req, res, _) => {
   const email = (req.body.email || "").trim().toLowerCase();
   const password = (req.body.password || "").trim();

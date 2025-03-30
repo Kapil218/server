@@ -11,32 +11,29 @@ const getDoctors = asyncHandler(async (req, res, _) => {
     rating,
     page = 1,
     perPage = 6,
-    topRated, // Get topRated param
+    topRated,
   } = req.query;
 
-  let whereClause = " WHERE 1=1"; // Start with base WHERE clause
+  let whereClause = " WHERE 1=1"; // Base condition
   const values = [];
   let count = 1;
 
-  // Check if any filters or search query are applied
+  // Check if filters or search query are applied
   const hasFilters = query || gender || experience || rating;
 
-  // If topRated=true and no filters/search are applied, fetch top-rated doctors
+  // If topRated=true and no filters/search, return top-rated doctors without pagination
   if (topRated === "true" && !hasFilters) {
-    const topRatedQuery = `
-      SELECT * FROM doctors 
-      ORDER BY rating DESC 
-      LIMIT 6
-    `;
+    const topRatedQuery = `SELECT * FROM doctors ORDER BY rating DESC LIMIT 6`;
     const result = await pool.query(topRatedQuery);
-
-    return res.status(200).json(
-      new ApiResponse(
-        200,
-        { doctors: result.rows }, // No pagination for top-rated case
-        "Top-rated doctors fetched successfully"
-      )
-    );
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          { doctors: result.rows },
+          "Top-rated doctors fetched successfully"
+        )
+      );
   }
 
   // Search filter (name or specialty)
@@ -46,14 +43,14 @@ const getDoctors = asyncHandler(async (req, res, _) => {
     count += 2;
   }
 
-  // Gender filter (case insensitive)
+  // Gender filter
   if (gender) {
     whereClause += ` AND gender ILIKE $${count}`;
     values.push(gender);
     count++;
   }
 
-  // Experience filter (handle ranges)
+  // Experience filter
   if (experience) {
     if (experience.includes("-")) {
       const [minExp, maxExp] = experience.split("-").map(Number);
@@ -68,13 +65,13 @@ const getDoctors = asyncHandler(async (req, res, _) => {
   }
 
   // Rating filter
-  if (!isNaN(parseFloat(rating))) {
+  if (!isNaN(parseInt(rating))) {
     whereClause += ` AND rating >= $${count}`;
     values.push(parseFloat(rating));
     count++;
   }
 
-  // Get total count for pagination
+  // Get total count after applying filters
   const countQuery = `SELECT COUNT(*) FROM doctors ${whereClause}`;
   const totalResult = await pool.query(countQuery, values);
   const totalDoctors = parseInt(totalResult.rows[0].count, 10);
@@ -85,16 +82,18 @@ const getDoctors = asyncHandler(async (req, res, _) => {
   const currentPage = Number(page) || 1;
   const offset = (currentPage - 1) * pageSize;
 
-  values.push(pageSize); // LIMIT
-  values.push(offset); // OFFSET
+  values.push(pageSize);
+  values.push(offset);
 
-  // Final query
+  // Fetch filtered results with pagination
   const finalQuery = `
     SELECT * FROM doctors 
     ${whereClause} 
     ORDER BY rating DESC 
     LIMIT $${count} OFFSET $${count + 1}
   `;
+  console.log(finalQuery);
+
   const result = await pool.query(finalQuery, values);
 
   res.status(200).json(
@@ -102,9 +101,10 @@ const getDoctors = asyncHandler(async (req, res, _) => {
       200,
       {
         doctors: result.rows,
-        pagination: hasFilters
-          ? { totalDoctors, totalPages, currentPage, pageSize }
-          : undefined, // No pagination for top-rated case
+        pagination:
+          topRated !== "true"
+            ? { totalDoctors, totalPages, currentPage, pageSize }
+            : undefined, // No pagination for topRated=true case
       },
       "Doctors fetched successfully"
     )
