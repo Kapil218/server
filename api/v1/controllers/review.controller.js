@@ -3,49 +3,35 @@ import { pool } from "../../db/index.js";
 import ApiResponse from "../utils/apiResponse.js";
 import ApiError from "../utils/apiError.js";
 
-const pendingReviewsOfUsers = asyncHandler(async (req, res) => {
+const pendingReviewsOfUsers = asyncHandler(async (req, res, next) => {
   try {
-    const doctor_id = parseInt(req.body.id);
     const patient_id = req.user.id;
 
-    if (!doctor_id || isNaN(doctor_id)) {
-      throw new ApiError(400, "Invalid doctor ID");
-    }
-
     const query = `
-    SELECT 
-      a.id AS appointment_id, 
-      a.appointment_time, 
-      a.location, 
-      a.consultation_type, 
-      a.status 
-    FROM appointments a
-    LEFT JOIN reviews r ON a.id = r.appointment_id
-    WHERE a.doctor_id = $1 
-      AND a.patient_id = $2 
-      AND a.status <> 'completed'
-      AND r.appointment_id IS NULL
-    ORDER BY a.appointment_time DESC;
-  `;
+      SELECT 
+        a.id AS appointment_id, 
+        a.appointment_time, 
+        a.doctor_id,
+        a.location, 
+        a.consultation_type, 
+        a.status 
+      FROM appointments a
+      LEFT JOIN reviews r ON a.id = r.appointment_id
+      WHERE 
+        a.patient_id = $1 
+        AND a.status = 'completed'  -- Only completed appointments
+        AND r.appointment_id IS NULL -- Appointments with no reviews
+      ORDER BY a.appointment_time DESC;
+    `;
 
-    const appointmentsForReview = await pool.query(query, [
-      doctor_id,
-      patient_id,
-    ]);
+    const { rows } = await pool.query(query, [patient_id]);
 
     res
       .status(200)
-      .json(
-        new ApiResponse(
-          200,
-          appointmentsForReview.rows,
-          "Pending reviews fetched successfully"
-        )
-      );
+      .json(new ApiResponse(200, rows, "Pending reviews fetched successfully"));
   } catch (error) {
-    throw new ApiError(
-      500,
-      "Something went wrong while fetching pending reviews"
+    next(
+      new ApiError(500, "Something went wrong while fetching pending reviews")
     );
   }
 });
@@ -89,13 +75,9 @@ const addReview = asyncHandler(async (req, res) => {
 
   const appointmentQuery = `
         SELECT * FROM appointments 
-        WHERE id = $1 AND doctor_id = $2 AND patient_id = $3 AND status = 'Completed'
+        WHERE id = $1 AND status = 'completed'
       `;
-  const appointmentCheck = await pool.query(appointmentQuery, [
-    appointment_id,
-    doctor_id,
-    patient_id,
-  ]);
+  const appointmentCheck = await pool.query(appointmentQuery, [appointment_id]);
 
   if (appointmentCheck.rows.length === 0) {
     throw new ApiError(404, "No valid completed appointment found to review");
@@ -124,6 +106,21 @@ const addReview = asyncHandler(async (req, res) => {
     review,
     rating,
   ]);
+
+  const avgRatingQuery = `
+        SELECT AVG(rating) AS avg_rating 
+        FROM reviews 
+        WHERE doctor_id = $1;
+      `;
+  const avgRatingResult = await pool.query(avgRatingQuery, [doctor_id]);
+  const avgRating = avgRatingResult.rows[0].avg_rating;
+
+  const updateQuery = `
+        UPDATE doctors 
+        SET rating = $1 
+        WHERE id = $2;
+      `;
+  const updateResult = await pool.query(updateQuery, [avgRating, doctor_id]);
 
   res
     .status(201)
