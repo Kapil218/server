@@ -55,6 +55,7 @@ const loginWithGoogle = asyncHandler(async (req, res, next) => {
     scope: ["email", "profile"],
   })(req, res, next);
 });
+
 const loginWithGoogleCallback = asyncHandler(async (req, res, next) => {
   passport.authenticate("google", { session: false }, async (err, profile) => {
     if (err) {
@@ -269,6 +270,28 @@ const refreshUserToken = asyncHandler(async (req, res, _) => {
     );
 });
 
+//----------------------------------------------------------------------------------------------------------------------------------------------
+// FETCH USER BY ID
+//----------------------------------------------------------------------------------------------------------------------------------------------
+
+const getUserById = asyncHandler(async (req, res) => {
+  const id = req.user.id;
+  const userQuery = await pool.query(
+    "SELECT id, name, email FROM users WHERE id = $1",
+    [id]
+  );
+
+  if (userQuery.rowCount === 0) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const user = userQuery.rows[0];
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, user, "User retrieved successfully"));
+});
+
 export {
   registerUser,
   loginUser,
@@ -276,4 +299,5 @@ export {
   refreshUserToken,
   loginWithGoogle,
   loginWithGoogleCallback,
+  getUserById,
 };

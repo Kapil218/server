@@ -225,4 +225,39 @@ const updateAppointmentStatus = asyncHandler(async (req, res) => {
   });
 });
 
-export { bookAppointment, updateAppointmentStatus, getAllAppointments };
+const getAppointmentsByUser = asyncHandler(async (req, res) => {
+  const id = req.user.id;
+  const result = await pool.query(
+    `SELECT a.*, d.name AS doctor_name 
+     FROM appointments a 
+     JOIN doctors d ON a.doctor_id = d.id 
+     WHERE a.patient_id = $1 
+     ORDER BY a.appointment_time ASC`,
+    [id]
+  );
+
+  console.log(result);
+
+  if (result.rowCount === 0) {
+    return res
+      .status(204)
+      .json(new ApiResponse(204, [], "No appointments found for the user"));
+  }
+
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        result.rows,
+        "User appointments fetched successfully"
+      )
+    );
+});
+
+export {
+  bookAppointment,
+  updateAppointmentStatus,
+  getAllAppointments,
+  getAppointmentsByUser,
+};

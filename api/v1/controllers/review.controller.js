@@ -127,4 +127,42 @@ const addReview = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, newReview.rows[0], "Review added successfully"));
 });
 
-export { addReview, reviewHistoryOfUser, pendingReviewsOfUsers };
+const getDoctorReviews = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!id) {
+    throw new ApiError(400, "Doctor ID is required");
+  }
+
+  const reviewsQuery = `
+    SELECT 
+      r.id AS review_id,
+      r.review,
+      r.rating,
+      r.created_at,
+      u.name AS patient_name
+    FROM reviews r
+    INNER JOIN users u ON r.patient_id = u.id
+    WHERE r.doctor_id = $1
+    ORDER BY r.created_at DESC;
+  `;
+
+  const { rows: reviews } = await pool.query(reviewsQuery, [id]);
+
+  if (reviews.length === 0) {
+    return res
+      .status(200)
+      .json(new ApiResponse(200, [], "No reviews found for this doctor"));
+  }
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, reviews, "Doctor reviews fetched successfully"));
+});
+
+export {
+  addReview,
+  reviewHistoryOfUser,
+  pendingReviewsOfUsers,
+  getDoctorReviews,
+};
