@@ -151,19 +151,11 @@ const addDoctor = asyncHandler(async (req, res, _) => {
   const degree = (req.body.degree || "").trim();
   const location = (req.body.location || "").trim();
   const gender = (req.body.gender || "").trim();
-  const available_times = req.body.available_times || {};
+  const available_times = {};
   const created_by_admin = req.user?.id; // Ensure this is present
 
   if (
-    !(
-      name &&
-      specialty &&
-      degree &&
-      location &&
-      gender &&
-      Object.keys(available_times).length > 0 &&
-      created_by_admin
-    )
+    !(name && specialty && degree && location && gender && created_by_admin)
   ) {
     throw new ApiError(400, "All fields are required");
   }
@@ -171,11 +163,6 @@ const addDoctor = asyncHandler(async (req, res, _) => {
   if (!Number.isInteger(experience) || experience < 0) {
     throw new ApiError(400, "Experience must be a positive integer");
   }
-
-  const availableTimesJson =
-    typeof available_times === "string"
-      ? available_times
-      : JSON.stringify(available_times);
 
   const newDoctor = await pool.query(
     `INSERT INTO doctors (name, specialty, experience, degree, location, available_times, gender, created_by_admin) 
@@ -186,7 +173,7 @@ const addDoctor = asyncHandler(async (req, res, _) => {
       experience,
       degree,
       location,
-      availableTimesJson,
+      available_times,
       gender,
       created_by_admin,
     ]

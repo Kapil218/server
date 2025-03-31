@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import passport from "./api/v1/utils/passportServices.js";
 
 const app = express();
 
@@ -12,6 +13,8 @@ app.use(
     credentials: true,
   })
 );
+
+app.use(passport.initialize());
 
 app.use(express.json({ limit: "16kb" }));
 

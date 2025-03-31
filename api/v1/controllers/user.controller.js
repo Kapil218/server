@@ -8,6 +8,7 @@ import {
 } from "../utils/jwtTokens.js";
 import { pool } from "../../db/index.js";
 import { hashValue, compareValue } from "../utils/bcrypt.js";
+import passport from "passport";
 
 // --------------------------------------------------------------------------------------------------------------------------------------
 // REGISTER
@@ -22,7 +23,7 @@ const registerUser = asyncHandler(async (req, res) => {
   if ([name, email, password].some((field) => field === "")) {
     throw new ApiError(400, "All fields are required");
   }
-  const role = email.endsWith("@tothenew.com") ? "admin" : "user";
+  const role = email === "admin@tothenew.com" ? "admin" : "user";
 
   const userExists = await pool.query("SELECT * FROM users WHERE email = $1", [
     email,
@@ -49,29 +50,72 @@ const registerUser = asyncHandler(async (req, res) => {
 // ----------------------------------------------------------------------------------------------------------------------------------------------
 // LOGIN
 // --------------------------------------------------------------------------------------------------------------------------------------------
-const loginWithGoogle = asyncHandler(async (req, res) => {
+const loginWithGoogle = asyncHandler(async (req, res, next) => {
   passport.authenticate("google", {
     scope: ["email", "profile"],
-  })(req, res, (err) => {
+  })(req, res, next);
+});
+const loginWithGoogleCallback = asyncHandler(async (req, res, next) => {
+  passport.authenticate("google", { session: false }, async (err, profile) => {
     if (err) {
-      throw new ApiError(500, "Google authentication failed");
+      return next(new ApiError(500, "Google authentication failed"));
     }
-    res.status(200).json(new ApiResponse(200, null, "Google login initiated"));
-  });
-});
-const loginWithGoogleCallback = asyncHandler(async (req, res) => {
-  passport.authenticate("google", {
-    session: false,
-  }),
-    async (req, res) => {
-      try {
-        console.log("success", req.user);
-        res.redirect(`http://localhost:5000/api/v1/employees`);
-      } catch (err) {
-        console.log("catch of google auth", err);
+    if (!profile) {
+      return next(new ApiError(401, "Google authentication failed"));
+    }
+
+    try {
+      const userExists = await pool.query(
+        "SELECT * FROM users WHERE email = $1",
+        [profile.emails[0].value]
+      );
+
+      let user;
+
+      if (userExists.rowCount === 0) {
+        // Create new user
+        const role = email === "admin@tothenew.com" ? "admin" : "user";
+        const newUser = await pool.query(
+          "INSERT INTO users (name, email, role, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id, name, email, role",
+          [profile.displayName, profile.emails[0].value, role]
+        );
+
+        user = newUser.rows[0];
+      } else {
+        user = userExists.rows[0];
       }
-    };
+
+      // Generate tokens
+      const accessToken = await generateAccessToken(
+        user.id,
+        user.name,
+        user.email,
+        user.role
+      );
+      const refreshToken = await generateRefreshToken(user.id, user.role);
+
+      // Update refresh token in database
+      await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
+        refreshToken,
+        user.id,
+      ]);
+
+      const options = {
+        httpOnly: true,
+        secure: true,
+      };
+
+      res
+        .status(200)
+        .cookie("refreshToken", refreshToken, options)
+        .cookie("accessToken", accessToken, options)
+        .redirect(process.env.FRONTEND_URL || "http://localhost:3001");
+    } catch (error) {
+      return next(new ApiError(500, "Error processing Google authentication"));
+    }
+  })(req, res, next);
 });
+
 const loginUser = asyncHandler(async (req, res, _) => {
   const email = (req.body.email || "").trim().toLowerCase();
   const password = (req.body.password || "").trim();
@@ -225,4 +269,11 @@ const refreshUserToken = asyncHandler(async (req, res, _) => {
     );
 });
 
-export { registerUser, loginUser, logoutUser, refreshUserToken };
+export {
+  registerUser,
+  loginUser,
+  logoutUser,
+  refreshUserToken,
+  loginWithGoogle,
+  loginWithGoogleCallback,
+};
