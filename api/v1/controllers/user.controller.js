@@ -75,7 +75,9 @@ const loginWithGoogleCallback = asyncHandler(async (req, res, next) => {
 
       if (userExists.rowCount === 0) {
         // Create new user
-        const role = email === "admin@tothenew.com" ? "admin" : "user";
+        const role =
+          profile.emails[0].value === "admin@tothenew.com" ? "admin" : "user";
+
         const newUser = await pool.query(
           "INSERT INTO users (name, email, role, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id, name, email, role",
           [profile.displayName, profile.emails[0].value, role]
@@ -96,10 +98,10 @@ const loginWithGoogleCallback = asyncHandler(async (req, res, next) => {
       const refreshToken = await generateRefreshToken(user.id, user.role);
 
       // Update refresh token in database
-      await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
-        refreshToken,
-        user.id,
-      ]);
+      await pool.query(
+        "UPDATE users SET refresh_token = $1, isLoggedIn = $2 WHERE id = $3",
+        [refreshToken, true, user.id]
+      );
 
       const options = {
         httpOnly: true,
@@ -149,10 +151,10 @@ const loginUser = asyncHandler(async (req, res, _) => {
 
   const refreshToken = await generateRefreshToken(user.id, user.role);
 
-  await pool.query("UPDATE users SET refresh_token = $1 WHERE id = $2", [
-    refreshToken,
-    user.id,
-  ]);
+  await pool.query(
+    "UPDATE users SET refresh_token = $1, isLoggedIn= $2 WHERE id = $3",
+    [refreshToken, true, user.id]
+  );
 
   const options = {
     httpOnly: true,
@@ -190,8 +192,8 @@ const logoutUser = asyncHandler(async (req, res, _) => {
     throw new ApiError(400, "User not authenticated");
   }
   const result = await pool.query(
-    "UPDATE users SET refresh_token = NULL WHERE id = $1",
-    [req.user.id]
+    "UPDATE users SET refresh_token = NULL, isLoggedIn = $1 WHERE id = $2",
+    [false, req.user.id]
   );
 
   if (result.rowCount === 0) {

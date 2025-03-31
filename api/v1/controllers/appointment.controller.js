@@ -128,8 +128,6 @@ const bookAppointment = asyncHandler(async (req, res) => {
   const patientEmail = patientData.rows[0].email;
   const patientName = patientData.rows[0].name;
 
-  console.log(patientData.rows[0]);
-
   // Email Data
   const emailData = {
     appointment_id: newAppointment.rows[0].id,
@@ -226,6 +224,10 @@ const updateAppointmentStatus = asyncHandler(async (req, res) => {
 });
 
 const getAppointmentsByUser = asyncHandler(async (req, res) => {
+  if (!req.user || !req.user.id) {
+    throw new ApiError(403, "Unauthorized: User must be logged in");
+  }
+
   const id = req.user.id;
   const result = await pool.query(
     `SELECT a.*, d.name AS doctor_name 
@@ -236,12 +238,10 @@ const getAppointmentsByUser = asyncHandler(async (req, res) => {
     [id]
   );
 
-  console.log(result);
-
   if (result.rowCount === 0) {
     return res
-      .status(204)
-      .json(new ApiResponse(204, [], "No appointments found for the user"));
+      .status(200)
+      .json(new ApiResponse(200, [], "no appointment found"));
   }
 
   res
