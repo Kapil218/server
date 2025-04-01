@@ -59,8 +59,6 @@ const sendAppointmentEmail = async (data) => {
       subject: "Your Appointment Status",
       html: emailContent,
     });
-
-    console.log("Appointment email sent: %s", info.messageId);
   } catch (error) {
     console.error("Error sending email:", error);
   }
